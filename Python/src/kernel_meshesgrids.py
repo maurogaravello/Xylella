@@ -6,8 +6,6 @@ import numpy as np
 from numpy.typing import NDArray
 from typing import Tuple
 
-
-
 # 2D meshgrid creation for kernels
 def create_2Dmesh_kernels(x1_kernel_limits:Tuple[float, float], x2_kernel_limits:Tuple[float, float], 
                           dx1:float, dx2:float) -> Tuple[NDArray, NDArray]:

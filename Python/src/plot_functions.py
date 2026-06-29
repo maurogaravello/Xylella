@@ -8,15 +8,15 @@ import logging
 import os
 from src import save_load as sav
 from numpy.typing import NDArray
+from pathlib import Path
 
 #
 # Plot q
 #
-def plot_density(dir_name, x:NDArray, y:NDArray,
+def plot_density(dir_name:Path, x:NDArray, y:NDArray,
                  pic:int, q_range:list, 
                  da_juveniles:float, da_adults:float, **kwargs) -> None:
 
-    debug = kwargs.get('debug', False)
     color_bar = kwargs.get('color_bar', True)
     no_pictures = kwargs.get('no_pictures', False)
     rcount = kwargs.get('rcount', 50)
@@ -91,9 +91,9 @@ def plot_density(dir_name, x:NDArray, y:NDArray,
 
 
 # Movie
-def movie(base_directory):
+def movie(base_directory_1:Path) -> None:
 
-    base_directory = base_directory.as_posix()
+    base_directory = base_directory_1.as_posix()
 
     commands = []
 
@@ -116,7 +116,7 @@ def movie(base_directory):
 #
 # plot a contour
 #
-def plot_contour(t1:NDArray, t2:NDArray, matrix, **kwargs) -> None:
+def plot_contour(t1:NDArray, t2:NDArray, matrix:NDArray, **kwargs) -> None:
 
     """ Function drawing the contour of the solution
 
@@ -159,12 +159,12 @@ def plot_contour(t1:NDArray, t2:NDArray, matrix, **kwargs) -> None:
     ax = fig.add_subplot(111)
 
     if subtitle:
-        ax.set_title(title, loc='left').set_size('xx-large')
-        ax.set_title(subtitle, loc='right').set_size('small')
+        ax.set_title(title, loc='left').set_fontsize('xx-large')
+        ax.set_title(subtitle, loc='right').set_fontsize('small')
     else:
-        ax.set_title(title).set_size('xx-large')
-    ax.set_xlabel(xlabel).set_size('xx-large')
-    ax.set_ylabel(ylabel, rotation='horizontal').set_size('xx-large')
+        ax.set_title(title).set_fontsize('xx-large')
+    ax.set_xlabel(xlabel, fontsize='xx-large')
+    ax.set_ylabel(ylabel, rotation='horizontal', fontsize='xx-large')
 
     xx, yy = np.meshgrid(t1, t2, indexing='ij')
 
@@ -189,7 +189,7 @@ def plot_contour(t1:NDArray, t2:NDArray, matrix, **kwargs) -> None:
 #
 # plot the mass
 #
-def plot_mass(directory, times:NDArray, mass:NDArray, **kwargs):
+def plot_mass(directory:Path, times:NDArray, mass:NDArray, **kwargs) -> None:
 
     """ Function drawing the mass of the solution versus the time
 
@@ -219,12 +219,12 @@ def plot_mass(directory, times:NDArray, mass:NDArray, **kwargs):
     ax = fig.add_subplot(111)
 
     if subtitle:
-        ax.set_title(title, loc='left').set_size('xx-large')
-        ax.set_title(subtitle, loc='right').set_size('small')
+        ax.set_title(title, loc='left').set_fontsize('xx-large')
+        ax.set_title(subtitle, loc='right').set_fontsize('small')
     else:
-        ax.set_title(title).set_size('xx-large')
-    ax.set_xlabel(xlabel).set_size('xx-large')
-    ax.set_ylabel(ylabel, rotation = 'horizontal').set_size('xx-large')
+        ax.set_title(title).set_fontsize('xx-large')
+    ax.set_xlabel(xlabel, fontsize='xx-large')
+    ax.set_ylabel(ylabel, rotation = 'horizontal', fontsize='xx-large')
 
     c = ax.plot(times, mass)
 
@@ -239,7 +239,7 @@ def plot_mass(directory, times:NDArray, mass:NDArray, **kwargs):
 #
 # plot a surface
 #
-def plot_surface(t1:NDArray, t2:NDArray, matrix, **kwargs) -> None:
+def plot_surface(t1:NDArray, t2:NDArray, matrix:NDArray, **kwargs) -> None:
 
     """ Function drawing the surface of the solution
 

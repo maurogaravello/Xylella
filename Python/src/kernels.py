@@ -6,7 +6,6 @@ from numpy.typing import NDArray
 from dataclasses import dataclass
 from typing import Tuple, Callable
 
-
 @dataclass
 class Kernels:
     # gradient of $\eta$

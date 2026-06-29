@@ -3,22 +3,13 @@
 
 import numpy as np
 from scipy import signal
-from numpy.typing import NDArray
-
-# import logging
-
-# from datetime import datetime
-# from multiprocessing import Pool
 from multiprocessing.pool import Pool as PoolClass
-from typing import Tuple
+
 from src.SimulationState import SimulationState
 from src.kernels import Kernels
 from src.meshes import SpaceMeshes, AgeMeshes
 from src.mortality import MortalityParams
 from src.params_scheme import SimulationParams
-
-
-# importing functions for Lax-Friedrichs
 from src import finite_volume_methods as fvm
 
 
