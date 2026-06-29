@@ -332,7 +332,7 @@ if __name__ == '__main__':
         ccount = param.ccount if hasattr(param, 'ccount') else 50        
 
         # starting logging
-        filelog = dir_simulation / 'Plots_log.txt'
+        filelog = dir_simulation / 'log_Plots.txt'
         start_time = start_log(filelog)
 
         try:
@@ -375,9 +375,8 @@ if __name__ == '__main__':
                                     args=(dir_simulation, spatial_meshes.x1, 
                                           spatial_meshes.x2, j,
                                            param.density_limits,
-                                           age_meshes.a_J, age_meshes.a_A), 
-                                           kwargs={'debug':args.debug, 'color_bar':args.color_bar,
-                                                   'no_pictures':args.no_pictures,
+                                           age_meshes.da_J, age_meshes.da_A), 
+                                           kwargs={'color_bar':args.color_bar,
                                                    'rcount':rcount, 'ccount':ccount})
             pp[j % procs].start()
 
@@ -397,7 +396,7 @@ if __name__ == '__main__':
     #    
     elif args.movie:
         # starting logging
-        filelog = dir_simulation / 'Movie_log.txt'
+        filelog = dir_simulation / 'log_Movie.txt'
         start_log(filelog)
 
         logging.info('Movie started at {}'.format(datetime.now()))

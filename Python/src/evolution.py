@@ -60,7 +60,8 @@ def one_step_evolution(time:float,
     states.u_velocity_y.zero_ghost_cells()
     
     sum_convolutions = -(parameters.weeds_convolved + conv[0])
-    velocity_w = (sum_convolutions * conv[3], sum_convolutions *conv[4])
+    velocity_w = parameters.velocity_adults(sum_convolutions * conv[3], 
+                                            sum_convolutions *conv[4])
     del sum_convolutions, conv
     max_velocity_w = np.amax(velocity_w[0]**2 + velocity_w[1]**2)**0.5
     np.copyto(states.w_velocity_x.density, velocity_w[0])

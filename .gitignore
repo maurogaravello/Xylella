@@ -218,6 +218,9 @@ __marimo__/
 
 # logs
 log_*
+*_log.txt
 
 # savings
 *.npz
+*.png
+*.avi

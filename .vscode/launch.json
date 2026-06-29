@@ -12,8 +12,9 @@
             "console": "integratedTerminal",
             "justMyCode": true,
             "args": [
-                "-s",
-                "Python/simulations/Aveiro"
+                "-p",
+                "Python/tests/velocity_down_no_source_LF"
+            ]
          }
     ]
 }
