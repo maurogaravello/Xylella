@@ -1,0 +1,693 @@
+\documentclass[12pt,a4paper]{report}
+
+\usepackage[utf-8]{inputenc}
+\usepackage[english]{babel}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+
+\geometry{margin=1in}
+\pagestyle{fancy}
+\fancyhead[L]{Xylella Nonlocal System Simulation}
+\fancyfoot[C]{\thepage}
+
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    commentstyle=\color{gray},
+    stringstyle=\color{red},
+    breaklines=true,
+    showstringspaces=false,
+    tabsize=4
+}
+
+\title{\textbf{Xylella Nonlocal System Simulation} \\ \large A Comprehensive Python Program Documentation}
+\author{Mauro Garavello}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+\newpage
+
+\chapter{Introduction}
+
+The Xylella project is a sophisticated Python-based simulation program designed to model the dynamics of a nonlocal system, particularly focused on the spread and dynamics of \textit{Xylella fastidiosa} in olive tree populations. The program implements numerical methods for solving structured population models with spatial and age-structured components.
+
+\section{Project Overview}
+
+The simulation employs:
+\begin{itemize}
+    \item \textbf{Finite Volume Methods}: Specifically the Lax-Friedrichs and upwind schemes for solving conservation laws
+    \item \textbf{Dimensional Splitting}: Separates the evolution in age, spatial (x), and spatial (y) dimensions
+    \item \textbf{Age-Structured Populations}: Models juvenile and adult population dynamics separately
+    \item \textbf{Spatial Coupling}: Incorporates nonlocal kernels and weeds convolution
+    \item \textbf{Parallel Processing}: Uses multiprocessing for computational efficiency in both simulation and visualization
+\end{itemize}
+
+\chapter{Program Architecture}
+
+\section{Directory Structure}
+
+\begin{lstlisting}
+Python/
+  main_xylella.py           # Main entry point and orchestrator
+  src/
+    SimulationState.py      # Data structures for population states
+    evolution.py            # Time-stepping evolution algorithm
+    finite_volume_methods.py # Numerical flux implementations
+    kernel_meshesgrids.py   # Kernel mesh generation utilities
+    kernels.py              # Kernel definition and creation
+    meshes.py               # Spatial and age mesh utilities
+    mortality.py            # Mortality parameter management
+    params_scheme.py        # Simulation parameter dataclass
+    plot_functions.py       # Visualization and plotting
+    save_load.py            # I/O operations for state persistence
+  simulations/              # Simulation configurations
+    Aveiro_LF/
+    Aveiro_upwind/
+  tests/                    # Test configurations
+    velocity_down_no_source_LF/
+    velocity_down_no_source_upwind/
+    velocity_left_no_source_LF/
+    velocity_left_no_source_upwind/
+\end{lstlisting}
+
+\section{Core Design Principles}
+
+The program follows a modular architecture with clear separation of concerns:
+
+\begin{enumerate}
+    \item \textbf{State Management}: Population distributions are stored in specialized dataclasses with augmented arrays for boundary conditions
+    \item \textbf{Numerical Methods}: Finite volume implementations are isolated in dedicated modules
+    \item \textbf{Configuration}: Each simulation configuration is parameter-driven through external Python parameter files
+    \item \textbf{I/O Operations}: State snapshots are saved at specified time intervals for later analysis and visualization
+\end{enumerate}
+
+\chapter{Core Modules}
+
+\section{Main Entry Point: \texttt{main\_xylella.py}}
+
+The main program orchestrates the entire simulation workflow and serves as the interface for users.
+
+\subsection{Command-Line Arguments}
+
+\begin{lstlisting}[language=bash]
+python main_xylella.py <dir_name> [options]
+
+Arguments:
+  dir_name                    Directory containing parameters.py
+  
+Options:
+  -s, --simulation            Execute the simulation
+  -p, --plot                  Generate plots from saved simulation data
+  -pn, --processors_number    Number of processors for parallel tasks
+  -m, --movie                 Create movies from plots
+  -cb, --color_bar            Add color bar to contour plots
+\end{lstlisting}
+
+\subsection{Simulation Workflow}
+
+The main program follows this workflow:
+
+\begin{enumerate}
+    \item \textbf{Parameter Loading}: Dynamically imports a \texttt{parameters.py} module from the specified directory
+    \item \textbf{Mesh Creation}: Generates spatial meshes for $x_1, x_2$ coordinates and age structure
+    \item \textbf{State Initialization}: Creates initial conditions for populations $u$ (juveniles), $w$ (adults), and $z$ (trees)
+    \item \textbf{Evolution Loop}: Iteratively advances the simulation in time, saving snapshots at regular intervals
+    \item \textbf{Mass Conservation Tracking}: Computes and logs $L^1$ norms (masses) and $L^\infty$ norms throughout the simulation
+\end{enumerate}
+
+\subsection{Key Variables}
+
+\begin{itemize}
+    \item \textbf{$u$}: Juvenile population distribution, 3D array with dimensions (age, $x_1$, $x_2$)
+    \item \textbf{$w$}: Adult population distribution, 3D array with dimensions (age, $x_1$, $x_2$)
+    \item \textbf{$z$}: Tree density distribution, 2D array with dimensions ($x_1$, $x_2$)
+    \item \textbf{Mortality parameters}: $\delta_u$, $\delta_w$, $\delta_z$, $\lambda$ (spatially and age-dependent)
+    \item \textbf{Kernels}: $\eta_\mu$ (weed kernel), $\nabla\eta$ (gradient kernel), $\eta_z$ (tree kernel)
+\end{itemize}
+
+\section{Simulation State: \texttt{SimulationState.py}}
+
+This module defines the data structures that hold the simulation's state variables.
+
+\subsection{State3D Dataclass}
+
+Represents age-structured population distributions with ghost cells for boundary conditions:
+
+\begin{lstlisting}[language=Python]
+@dataclass
+class State3D:
+    augmented_density: NDArray       # With ghost cells
+    density: NDArray                 # Core domain
+    augmented_density_a: NDArray     # Augmented in age dim
+    augmented_density_x: NDArray     # Augmented in x dim
+    augmented_density_y: NDArray     # Augmented in y dim
+    density_a_left: NDArray          # Shifted view
+    density_x_right: NDArray
+    density_x_left: NDArray
+    density_y_right: NDArray
+    density_y_left: NDArray
+\end{lstlisting}
+
+Ghost cells are used for implementing boundary conditions, particularly for juveniles (where $u(a=0, x_1, x_2) = \beta(t, x_1, x_2)$, the fertility term).
+
+\subsection{State2D Dataclass}
+
+Similar to State3D but for 2D spatial distributions (trees), with only $(x_1, x_2)$ dimensions.
+
+\subsection{SimulationState Dataclass}
+
+Bundles all three population distributions plus velocity fields:
+
+\begin{lstlisting}[language=Python]
+@dataclass
+class SimulationState:
+    u: State3D           # Juveniles
+    w: State3D           # Adults
+    z: State2D           # Trees
+    u_velocity_x: State2D
+    u_velocity_y: State2D
+    w_velocity_x: State2D
+    w_velocity_y: State2D
+\end{lstlisting}
+
+\section{Evolution Algorithm: \texttt{evolution.py}}
+
+The \texttt{one\_step\_evolution} function advances the system by one time step.
+
+\subsection{Algorithm Overview}
+
+\begin{enumerate}
+    \item \textbf{Compute Convolutions}: In parallel, compute nonlocal interactions:
+    \begin{itemize}
+        \item $z * \eta_z$ (tree-mediated interactions)
+        \item $(u/\Delta a) * \nabla\eta_1$ and $(u/\Delta a) * \nabla\eta_2$ (juvenile spreading)
+        \item $(w/\Delta a) * \nabla\eta_1$ and $(w/\Delta a) * \nabla\eta_2$ (adult spreading)
+    \end{itemize}
+    
+    \item \textbf{Calculate Velocity Fields}: 
+    \begin{itemize}
+        \item $\xi_u = \text{velocity\_juveniles}(-\text{weeds} \cdot \text{conv}, -\text{weeds} \cdot \text{conv})$
+        \item $\xi_w = \text{velocity\_adults}(-(\text{weeds} + z*\eta_z) \cdot \text{conv}, \ldots)$
+    \end{itemize}
+    
+    \item \textbf{Compute Time Step}: CFL condition determines $\Delta t$:
+    \[\Delta t = \text{CFL} \cdot \frac{\min(\Delta x_1, \Delta x_2, \Delta a_J, \Delta a_A)}{\alpha}\]
+    where $\alpha = \max(|\xi_u|, |\xi_w|, 1)$
+    
+    \item \textbf{Update Populations}: Apply finite volume method:
+    \[u^{n+1} = u^n + \Delta t \cdot \text{RHS}_u\]
+    \[w^{n+1} = w^n + \Delta t \cdot \text{RHS}_w\]
+    \[z^{n+1} = (1 - \Delta t \cdot \lambda \cdot \delta_z(w)) \cdot z^n\]
+\end{enumerate}
+
+\section{Finite Volume Methods: \texttt{finite\_volume\_methods.py}}
+
+Implements two schemes for spatial discretization: Lax-Friedrichs and upwind.
+
+\subsection{Lax-Friedrichs Scheme}
+
+For the $x$-direction:
+
+\begin{lstlisting}[language=Python]
+def lax_friedrichs_for_x(augmented_state, augmented_velocity_x, 
+                         x_mesh_size, alpha):
+    first_term = (augmented_velocity_x[2:, :] * augmented_state[:, 2:, :] 
+                  - augmented_velocity_x[:-2, :] * augmented_state[:, :-2, :])
+    second_term = alpha * (augmented_state[:, 2:, :] 
+                           - 2*augmented_state[:, 1:-1, :] 
+                           + augmented_state[:, :-2, :])
+    return (first_term - second_term) / (2*x_mesh_size)
+\end{lstlisting}
+
+The Lax-Friedrichs method adds artificial diffusion (via the $\alpha$ parameter) for stability:
+\[\text{Flux} = \frac{1}{2\Delta x}[F(u_{i+1}) - F(u_{i-1}) - \alpha(u_{i+1} - 2u_i + u_{i-1})]\]
+
+\subsection{Upwind Scheme}
+
+Implements donor-cell flux-corrected transport:
+
+\begin{lstlisting}[language=Python]
+def upwind_for_x(augmented_state, augmented_velocity_x, x_mesh_size):
+    first_term = (augmented_velocity_x[2:, :] * augmented_state[:, 2:, :] 
+                  - augmented_velocity_x[:-2, :] * augmented_state[:, :-2, :])
+    second_term = -0.5 * np.absolute(augmented_velocity_x[1:-1, :] 
+                                     + augmented_velocity_x[2:, :]) \
+                  * (augmented_state[:, 2:, :] - augmented_state[:, 1:-1, :])
+    third_term = -0.5 * np.absolute(augmented_velocity_x[1:-1, :] 
+                                    + augmented_velocity_x[:-2, :]) \
+                 * (augmented_state[:, :-2, :] - augmented_state[:, 1:-1, :])
+    return (first_term + second_term + third_term) / (2*x_mesh_size)
+\end{lstlisting}
+
+The upwind scheme uses velocity-dependent weights for better handling of steep gradients.
+
+\subsection{Age Evolution}
+
+Simple upwind method in age dimension:
+
+\begin{lstlisting}[language=Python]
+def upwind_for_age(augmented_state, age_mesh_size):
+    return (augmented_state[1:, :, :] - augmented_state[:-1, :, :]) / age_mesh_size
+\end{lstlisting}
+
+\section{Mesh Generation: \texttt{meshes.py}}
+
+Creates spatial and age grids for discretization.
+
+\subsection{Spatial Meshes}
+
+\begin{lstlisting}[language=Python]
+@dataclass
+class SpaceMeshes:
+    x1: NDArray         # Mesh points in x1 direction
+    x2: NDArray         # Mesh points in x2 direction
+    dx1: float          # Cell size in x1
+    dx2: float          # Cell size in x2
+    N_x1: int           # Number of grid points
+    N_x2: int
+\end{lstlisting}
+
+\subsection{Age Meshes}
+
+\begin{lstlisting}[language=Python]
+@dataclass
+class AgeMeshes:
+    a_J: NDArray        # Juvenile age grid
+    a_A: NDArray        # Adult age grid
+    da_J: float         # Juvenile age cell size
+    da_A: float         # Adult age cell size
+    N_a_J: int          # Number of juvenile age classes
+    N_a_A: int          # Number of adult age classes
+\end{lstlisting}
+
+\section{Kernel Definition: \texttt{kernels.py}}
+
+Defines the nonlocal kernels used in convolutions.
+
+\subsection{Kernel Functions}
+
+The kernels represent spatial interactions:
+
+\begin{itemize}
+    \item $\eta_\mu(x_1, x_2)$: Weed convolution kernel
+    \item $\nabla\eta(x_1, x_2)$: Gradient kernel for movement coupling
+    \item $\eta_z(x_1, x_2)$: Tree interaction kernel
+\end{itemize}
+
+\begin{lstlisting}[language=Python]
+@dataclass
+class Kernels:
+    eta_z: NDArray              # Tree kernel
+    grad_eta: list              # [grad_eta_x1, grad_eta_x2]
+\end{lstlisting}
+
+\section{Visualization: \texttt{plot\_functions.py}}
+
+Generates comprehensive visualizations of simulation results.
+
+\subsection{Plotting Functions}
+
+\begin{enumerate}
+    \item \textbf{plot\_contour}: 2D contour plots with customizable color levels
+    \item \textbf{plot\_surface}: 3D surface plots for population distributions
+    \item \textbf{plot\_mass}: Line plots of mass evolution over time
+    \item \textbf{plot\_density}: Master function generating all plot types for a time snapshot
+    \item \textbf{movie}: Creates AVI movies from sequences of plots using mencoder
+\end{enumerate}
+
+\subsection{Parallel Plotting}
+
+The program uses multiprocessing for parallel plot generation:
+
+\begin{lstlisting}[language=Python]
+for j in range(len(files_list)):
+    elem = files_list[j]
+    if (j >= procs):
+        pp[j % procs].join()
+    pp[j % procs] = Process(target=plot.plot_density, args=...)
+    pp[j % procs].start()
+\end{lstlisting}
+
+\section{Data I/O: \texttt{save\_load.py}}
+
+Handles persistence of simulation state using NumPy's compressed format.
+
+\begin{lstlisting}[language=Python]
+def save_status(dir_simulation, file_name, u, w, z, time):
+    # Saves densities and current time to NPZ file
+    
+def load_status(file_name):
+    # Loads densities and time from NPZ file
+    
+def save_mass(dir_simulation, times, mass_u, mass_w, mass_z, 
+              l_infty_u, l_infty_w, l_infty_z):
+    # Saves conservation metrics
+\end{lstlisting}
+
+\chapter{Numerical Methods}
+
+\section{Mathematical Framework}
+
+The program solves a system of partial differential equations with nonlocal terms:
+
+\begin{equation}
+\frac{\partial u}{\partial t} + \frac{\partial u}{\partial a} + \nabla \cdot (\xi_u u) = -\delta_u u
+\end{equation}
+
+\begin{equation}
+\frac{\partial w}{\partial t} + \frac{\partial w}{\partial a} + \nabla \cdot (\xi_w w) = -\delta_w w
+\end{equation}
+
+\begin{equation}
+\frac{\partial z}{\partial t} = -\lambda \delta_z(w_1) z
+\end{equation}
+
+where velocities are defined through nonlocal interactions:
+
+\begin{equation}
+\xi_u = v_u(-\text{weeds} \cdot \nabla\eta * (u/\Delta a), -\text{weeds} \cdot \nabla\eta * (u/\Delta a))
+\end{equation}
+
+\section{Dimensional Splitting}
+
+The program uses dimensional splitting to separate the multi-dimensional problem into 1D subproblems:
+
+\begin{enumerate}
+    \item Age evolution: $\partial_a u = -\delta u$
+    \item $x_1$ evolution: $\partial_t u + \partial_{x_1}(\xi_x u) = 0$
+    \item $x_2$ evolution: $\partial_t u + \partial_{x_2}(\xi_y u) = 0$
+\end{enumerate}
+
+This approach reduces computational complexity and allows for flexible numerical scheme selection per dimension.
+
+\section{CFL Stability Condition}
+
+The Courant-Friedrichs-Lewy (CFL) condition ensures stability:
+
+\[\Delta t \leq \text{CFL} \cdot \frac{\min(\Delta x_1, \Delta x_2, \Delta a)}{\max(|\xi|, 1)}\]
+
+The code dynamically adjusts $\Delta t$ to ensure:
+\begin{itemize}
+    \item CFL condition is satisfied
+    \item Time steps align with age grid (when possible)
+    \item Final time is reached exactly
+\end{itemize}
+
+\chapter{Configuration and Parameters}
+
+\section{Parameter File Structure}
+
+Each simulation requires a \texttt{parameters.py} file in the simulation directory containing:
+
+\begin{lstlisting}[language=Python]
+# Domain specification
+x1_limits = [x1_min, x1_max]
+x2_limits = [x2_min, x2_max]
+a_limits = [a_min, a_max]
+
+# Grid resolution
+N_x1 = 100      # Number of x1 nodes
+N_x2 = 100      # Number of x2 nodes
+N_a = 50        # Number of age nodes
+
+# Temporal parameters
+T = 10.0        # Final simulation time
+cfl = 0.5       # CFL parameter
+N_pictures = 20 # Snapshot intervals
+LF = True       # Use Lax-Friedrichs (False for upwind)
+
+# Initial conditions (functions)
+def u0(a, x1, x2): ...   # Initial juvenile distribution
+def w0(a, x1, x2): ...   # Initial adult distribution
+def z0(x1, x2): ...      # Initial tree distribution
+
+# Mortality rates
+def delta_u(a, x1, x2): ...
+def delta_w(a, x1, x2): ...
+def delta_z(x1, x2, w): ...
+
+# Boundary/source terms
+def beta(t, x1, x2): ...      # Juvenile production
+def s(t, x1, x2): ...         # New tree source
+def lmbda(x1, x2): ...        # Tree loss parameter
+
+# Kernels
+def eta_mu(x1, x2): ...       # Weed kernel
+def grad_eta(x1, x2): ...     # Gradient kernel
+def eta_z(x1, x2): ...        # Tree kernel
+
+# Velocity functions
+def velocity_juveniles(conv_x, conv_y): ...
+def velocity_adults(conv_x, conv_y): ...
+
+# Convolution method (optional)
+convolution = signal.oaconvolve  # or signal.convolve2d
+
+# Plotting ranges (optional)
+density_limits = [[u_min, u_max], [w_min, w_max], [z_min, z_max]]
+rcount, ccount = 50, 50  # Surface plot resolution
+\end{lstlisting}
+
+\chapter{Usage Examples}
+
+\section{Running a Simulation}
+
+\begin{lstlisting}[language=bash]
+# Execute simulation with 4 processors
+python main_xylella.py ./simulations/Aveiro_LF -s -pn 4
+
+# This will:
+# - Load parameters from Aveiro_LF/parameters.py
+# - Run the simulation
+# - Save snapshots to Aveiro_LF/Simulation/
+# - Generate log file Aveiro_LF/Simulation/log_Simulation.txt
+\end{lstlisting}
+
+\section{Plotting Simulation Results}
+
+\begin{lstlisting}[language=bash]
+# Generate plots from saved simulation data
+python main_xylella.py ./simulations/Aveiro_LF -p -pn 4 -cb
+
+# This will:
+# - Load saved snapshots
+# - Generate contour and surface plots
+# - Add color bars to plots
+# - Generate log file Aveiro_LF/Simulation/log_Plots.txt
+\end{lstlisting}
+
+\section{Creating Movies}
+
+\begin{lstlisting}[language=bash]
+# Create animation videos from plot sequences
+python main_xylella.py ./simulations/Aveiro_LF -m
+
+# This requires mencoder to be installed
+# Creates AVI files for surface and contour plots
+\end{lstlisting}
+
+\chapter{Output Files}
+
+\section{Simulation Output Structure}
+
+\begin{lstlisting}
+simulations/Aveiro_LF/Simulation/
+  saving_000.npz              # Snapshot at t=0
+  saving_001.npz              # Snapshot at t=T/19
+  ...
+  saving_019.npz              # Snapshot at t=T
+  Mass.npz                    # All conservation data
+  log_Simulation.txt          # Simulation log
+  log_Plots.txt               # Plotting log (if -p used)
+  log_Movie.txt               # Movie creation log (if -m used)
+  plot_contour_juveniles_*.png
+  plot_contour_adults_*.png
+  plot_contour_trees_*.png
+  plot_surface_juveniles_*.png
+  plot_surface_adults_*.png
+  plot_surface_trees_*.png
+  plot_mass_*.png
+  movie_*.avi                 # Generated movies
+\end{lstlisting}
+
+\section{Console Logging}
+
+Key logged information includes:
+
+\begin{itemize}
+    \item Initialization timestamps
+    \item Initial and final mass for each population
+    \item Initial and final $L^\infty$ norms
+    \item Checkpoint messages during simulation
+    \item Processor count and timing information
+    \item Total simulation duration
+\end{itemize}
+
+\chapter{Performance Considerations}
+
+\section{Computational Complexity}
+
+\subsection{Per Time Step}
+
+\begin{itemize}
+    \item \textbf{Convolutions}: $O(N^2 \log N)$ via FFT (using scipy.signal.oaconvolve)
+    \item \textbf{Finite Volume Updates}: $O(N^3)$ for 3D arrays (age + 2D space)
+    \item \textbf{Parallel Convolutions}: 3 independent FFT operations executed in parallel
+\end{itemize}
+
+\subsection{Memory Requirements}
+
+For a typical configuration with $N_x = 100$, $N_a = 50$:
+
+\begin{itemize}
+    \item State3D: $\approx$ 100 MB (including augmented arrays and shifted views)
+    \item State2D: $\approx$ 5 MB
+    \item Kernels: $\approx$ 10 MB
+    \item Total: $\approx$ 400-500 MB for simulation state
+\end{itemize}
+
+\section{Optimization Features}
+
+\begin{enumerate}
+    \item \textbf{Multiprocessing}: Convolutions computed in parallel (lines 48-50 of evolution.py)
+    \item \textbf{Memory Views}: Shifted array views avoid data copying
+    \item \textbf{Efficient Convolution}: Uses scipy's overlap-add method (oaconvolve)
+    \item \textbf{Parallel Plotting}: Independent plot generations executed in parallel
+\end{enumerate}
+
+\chapter{Extension Points}
+
+The modular design allows for easy extensions:
+
+\section{Custom Velocity Functions}
+
+Parameters can define custom velocity functions:
+
+\begin{lstlisting}[language=Python]
+def velocity_juveniles(conv_x, conv_y):
+    return (custom_vx(conv_x), custom_vy(conv_y))
+\end{lstlisting}
+
+\section{Alternative Kernels}
+
+Replace kernel definitions in parameters.py for different interaction models.
+
+\section{Additional Mortality Terms}
+
+Add age or space-dependent mortality functions directly in parameters.
+
+\section{Custom Initial Conditions}
+
+Define arbitrary initial distributions through parameter functions.
+
+\section{Alternative Numerical Schemes}
+
+Add new methods to \texttt{finite\_volume\_methods.py} and toggle via \texttt{LF} parameter.
+
+\chapter{Debugging and Logging}
+
+\section{Log Files}
+
+Three main log files provide diagnostic information:
+
+\begin{enumerate}
+    \item \textbf{log\_Simulation.txt}: Numerical results and timing
+    \item \textbf{log\_Plots.txt}: Visualization progress
+    \item \textbf{log\_Movie.txt}: Movie generation status
+\end{enumerate}
+
+\section{Inspection Points}
+
+Key variables to inspect when debugging:
+
+\begin{itemize}
+    \item Mass conservation (should remain relatively constant or decrease monotonically)
+    \item $L^\infty$ norms (check for oscillations or blow-up)
+    \item CFL time steps (should decrease if velocities increase)
+    \item Convolution outputs (should be smooth without spurious oscillations)
+\end{itemize}
+
+\chapter{References and Mathematical Notes}
+
+\section{Finite Volume Methods}
+
+The program implements classical finite volume schemes for conservation laws:
+
+\begin{itemize}
+    \item Lax-Friedrichs: Robust, diffusive, unconditionally stable in the discrete sense
+    \item Upwind: Preserves monotonicity, steeper gradients but less diffusion
+\end{itemize}
+
+\section{Nonlocal Models}
+
+The use of convolution kernels implements nonlocal dispersal and interaction operators, commonly used in:
+
+\begin{itemize}
+    \item Spatial ecology models
+    \item Epidemic models with long-distance transmission
+    \item Population dynamics with aggregation effects
+\end{itemize}
+
+\section{Age-Structured Models}
+
+The age dimension allows modeling ontogenetic changes in population dynamics, fundamental to:
+
+\begin{itemize}
+    \item Matrix population models
+    \item McKendrick-Von Foerster equations
+    \item Stage-structured population dynamics
+\end{itemize}
+
+\appendix
+
+\chapter{Key Functions Reference}
+
+\section{Main Control Flow}
+
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Function} & \textbf{Purpose} \\
+\hline
+\texttt{start\_log(file\_name)} & Initialize logging \\
+\texttt{create\_directory(directory)} & Setup output directory \\
+\texttt{one\_step\_evolution(...)} & Advance simulation by $\Delta t$ \\
+\hline
+\end{tabular}
+
+\section{Mesh Functions}
+
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Function} & \textbf{Purpose} \\
+\hline
+\texttt{spatial\_mesh(x1\_limits, x2\_limits, N\_x1, N\_x2)} & Create spatial grid \\
+\texttt{age\_mesh(a\_limits, N\_a)} & Create age grid \\
+\texttt{meshgrid\_2D(x1, x2)} & Generate 2D meshgrid \\
+\texttt{meshgrids\_3D(a, x1, x2)} & Generate 3D meshgrids \\
+\hline
+\end{tabular}
+
+\section{Numerical Methods}
+
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Function} & \textbf{Purpose} \\
+\hline
+\texttt{lax\_friedrichs\_for\_x/y(...)} & Lax-Friedrichs flux \\
+\texttt{upwind\_for\_x/y/age(...)} & Upwind flux \\
+\hline
+\end{tabular}
+
+\end{document}
