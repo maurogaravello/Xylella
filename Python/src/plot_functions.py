@@ -6,14 +6,15 @@
 import numpy as np
 import logging
 import os
-from lib import save_and_load as sav
+from src import save_load as sav
+from numpy.typing import NDArray
 
 #
 # Plot q
 #
-def plot_density(dir_name, x:np.array, y:np.array,
+def plot_density(dir_name, x:NDArray, y:NDArray,
                  pic:int, q_range:list, 
-                 da_juveniles:float, da_adults:float, **kwargs):
+                 da_juveniles:float, da_adults:float, **kwargs) -> None:
 
     debug = kwargs.get('debug', False)
     color_bar = kwargs.get('color_bar', True)
@@ -115,12 +116,12 @@ def movie(base_directory):
 #
 # plot a contour
 #
-def plot_contour(t1, t2, matrix, **kwargs):
+def plot_contour(t1:NDArray, t2:NDArray, matrix, **kwargs) -> None:
 
     """ Function drawing the contour of the solution
 
-    :param t1: numpy array describing the horizontal domain
-    :param t2: numpy array describing the vertical domain
+    :param t1: numpy 1D array describing the horizontal domain
+    :param t2: numpy 1D array describing the vertical domain
     :param matrix: tuple containing 4 numpy arrays describing the solution
 
     :param n_color: int. Number of colors of the plot
@@ -188,7 +189,7 @@ def plot_contour(t1, t2, matrix, **kwargs):
 #
 # plot the mass
 #
-def plot_mass(directory, times:np.array, mass:np.array, **kwargs):
+def plot_mass(directory, times:NDArray, mass:NDArray, **kwargs):
 
     """ Function drawing the mass of the solution versus the time
 
@@ -238,12 +239,12 @@ def plot_mass(directory, times:np.array, mass:np.array, **kwargs):
 #
 # plot a surface
 #
-def plot_surface(t1, t2, matrix, **kwargs):
+def plot_surface(t1:NDArray, t2:NDArray, matrix, **kwargs) -> None:
 
     """ Function drawing the surface of the solution
 
-    :param t1: numpy array describing the horizontal domain
-    :param t2: numpy array describing the vertical domain
+    :param t1: numpy 1D array describing the horizontal domain
+    :param t2: numpy 1D array describing the vertical domain
     :param matrix: tuple. The value of the function to be plotted
     :param DirName: str. Name of the directory
 

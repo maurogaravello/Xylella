@@ -122,8 +122,10 @@ if __name__ == '__main__':
         #
         # Creation of simulation variables
         #
-        states = SimulationState.initialize_simulation_state(age_meshes.N_a_J, age_meshes.N_a_A, 
-                                                             spatial_meshes.N_x1, spatial_meshes.N_x2)
+        states = SimulationState.initialize_states(age_meshes.N_a_J, 
+                                                   age_meshes.N_a_A,
+                                                   spatial_meshes.N_x1, 
+                                                   spatial_meshes.N_x2)
         logging.info('Simulation variables created')
     
         #
@@ -132,14 +134,14 @@ if __name__ == '__main__':
         xx1_2D, xx2_2D = meshes.meshgrid_2D(spatial_meshes.x1, spatial_meshes.x2)
         aa_J, xx1_J, xx2_J = meshes.meshgrids_3D(age_meshes.a_J, spatial_meshes.x1, spatial_meshes.x2)
         aa_A, xx1_A, xx2_A = meshes.meshgrids_3D(age_meshes.a_A, spatial_meshes.x1, spatial_meshes.x2)
-        logging.info('Meshgrids created')
+        logging.info('2D and 3D Meshgrids created')
 
         #
         # Setting u, w, and z with their initial conditions
         #
-        np.copyto(states.u, param.u0(aa_J,  xx1_J, xx2_J))
-        np.copyto(states.w, param.w0(aa_A, xx1_A, xx2_A))
-        np.copyto(states.z, param.z0(xx1_2D, xx2_2D))
+        np.copyto(states.u.density, param.u0(aa_J,  xx1_J, xx2_J))
+        np.copyto(states.w.density, param.w0(aa_A, xx1_A, xx2_A))
+        np.copyto(states.z.density, param.z0(xx1_2D, xx2_2D))
         logging.info('Initial conditions set for u, w, and z')
     
         # mortalities (not dependent on time) and lambda
@@ -220,17 +222,19 @@ if __name__ == '__main__':
         logging.info('Here we use {}'.format(convolution.__name__))
 
         # masses: L^1 norms
-        mass_u = [np.sum(states.u) * spatial_meshes.dx1 * spatial_meshes.dx2 * age_meshes.da_J]
-        mass_w = [np.sum(states.w) * spatial_meshes.dx1 * spatial_meshes.dx2 * age_meshes.da_A]
-        mass_z = [np.sum(states.z) * spatial_meshes.dx1 * spatial_meshes.dx2]
+        mass_u = [states.u.sum() * spatial_meshes.dx1 
+                  * spatial_meshes.dx2 * age_meshes.da_J]
+        mass_w = [states.w.sum() * spatial_meshes.dx1 
+                  * spatial_meshes.dx2 * age_meshes.da_A]
+        mass_z = [states.z.sum() * spatial_meshes.dx1 * spatial_meshes.dx2]
         logging.info('Initial mass for u = {}'.format(mass_u[0]))
         logging.info('Initial mass for w = {}'.format(mass_w[0]))
         logging.info('Initial mass for z = {}'.format(mass_z[0]))
 
         # L^\infty norms
-        l_infty_u = [np.max(np.abs(states.u))]
-        l_infty_w = [np.max(np.abs(states.w))]
-        l_infty_z = [np.max(np.abs(states.z))]
+        l_infty_u = [states.u.inf_norm()]
+        l_infty_w = [states.w.inf_norm()]
+        l_infty_z = [states.z.inf_norm()]
         logging.info(r'Initial $L^\infty$ norm for u = {}'.format(l_infty_u[0]))
         logging.info(r'Initial $L^\infty$ norm for w = {}'.format(l_infty_w[0]))
         logging.info(r'Initial $L^\infty$ norm for z = {}'.format(l_infty_z[0]))
@@ -245,41 +249,48 @@ if __name__ == '__main__':
             # saving the status (for plotting)
             if time >= step_pic*pic:
                 logging.info('Saving file_{:03d} at time {}'.format(pic, datetime.now()))
-                sal.save_status(dir_simulation, 'saving_{:03d}'.format(pic), states.u, 
-                                states.w, states.z, time)
+                sal.save_status(dir_simulation, 'saving_{:03d}'.format(pic), 
+                                states.u.density, 
+                                states.w.density, 
+                                states.z.density, 
+                                time)
                 pic += 1        
 
-
-
             # one step evolution
-            time, last_time_a = evolution.one_step_evolution(time, last_time_a, 
-                                                              spatial_meshes, age_meshes,
-                                                              states,
-                                                              mortalities,
-                                                              param_simulation,
-                                                              kernels_arrays,
-                                                              pools,
-                                                              convolution=convolution)
+            time = evolution.one_step_evolution(time, 
+                                                spatial_meshes, age_meshes,
+                                                states,
+                                                mortalities,
+                                                param_simulation,
+                                                kernels_arrays,
+                                                pools,
+                                                convolution=convolution)
             
             # masses updates
-            mass_u.append(np.sum(states.u) * spatial_meshes.dx1 *spatial_meshes.dx2 * age_meshes.da_J)
-            mass_w.append(np.sum(states.w) * spatial_meshes.dx1 *spatial_meshes.dx2 * age_meshes.da_A)
-            mass_z.append(np.sum(states.z) * spatial_meshes.dx1 *spatial_meshes.dx2)
+            mass_u.append(states.u.sum() * spatial_meshes.dx1 
+                          *spatial_meshes.dx2 * age_meshes.da_J)
+            mass_w.append(states.w.sum() * spatial_meshes.dx1 
+                          *spatial_meshes.dx2 * age_meshes.da_A)
+            mass_z.append(states.z.sum() * spatial_meshes.dx1 *spatial_meshes.dx2)
 
             # l_infty norms updates
-            l_infty_u.append(np.max(np.abs(states.u)))
-            l_infty_w.append(np.max(np.abs(states.w)))
-            l_infty_z.append(np.max(np.abs(states.z)))
+            l_infty_u.append(states.u.inf_norm())
+            l_infty_w.append(states.w.inf_norm())
+            l_infty_z.append(states.z.inf_norm())
 
             # times updates
             times.append(time)
 
         # last saving
         logging.info('Saving file_{:03d} at time {}'.format(pic, datetime.now()))
-        sal.save_status(dir_simulation, 'saving_{:03d}'.format(pic), states.u, 
-                        states.w, states.z, time)
+        sal.save_status(dir_simulation, 'saving_{:03d}'.format(pic), 
+                        states.u.density, 
+                        states.w.density, 
+                        states.z.density, 
+                        time)
 
-        sal.save_mass(dir_simulation, np.array(times), np.array(mass_u), np.array(mass_w), np.array(mass_z), 
+        sal.save_mass(dir_simulation, np.array(times), 
+                      np.array(mass_u), np.array(mass_w), np.array(mass_z), 
                       np.array(l_infty_u), np.array(l_infty_w), np.array(l_infty_z))
 
         # closing the log
@@ -345,8 +356,8 @@ if __name__ == '__main__':
                            title=r'$L^\infty$ norm of trees density', 
                            file_name='L_infty_norm_z.png')
             
-        except:
-            pass
+        except Exception as e:
+            logging.error('Error while loading the mass: {}'.format(e))
 
         # create list of savings        
         files_list = sorted(dir_simulation.glob('saving_*.npz'))
@@ -361,9 +372,10 @@ if __name__ == '__main__':
             if (j >= procs):
                 pp[j % procs].join()
             pp[j % procs] = Process(target=plot.plot_density, 
-                                    args=(dir_simulation, x1, x2, j,
+                                    args=(dir_simulation, spatial_meshes.x1, 
+                                          spatial_meshes.x2, j,
                                            param.density_limits,
-                                           da_J, da_A), 
+                                           age_meshes.a_J, age_meshes.a_A), 
                                            kwargs={'debug':args.debug, 'color_bar':args.color_bar,
                                                    'no_pictures':args.no_pictures,
                                                    'rcount':rcount, 'ccount':ccount})
