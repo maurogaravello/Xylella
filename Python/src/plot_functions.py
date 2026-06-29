@@ -5,88 +5,85 @@
 
 import numpy as np
 import logging
-import os
+import subprocess
+import matplotlib
+import matplotlib.pyplot as plt
+from collections.abc import Sequence
 from src import save_load as sav
 from numpy.typing import NDArray
 from pathlib import Path
+
+# Constants for plotting and movie generation
+MENCODER_FPS = 5
+MENCODER_CODEC = 'wmv2'
+DEFAULT_RCOUNT = 50
+DEFAULT_CCOUNT = 50
+DEFAULT_N_COLOR = 256
+
+
+def _prepare_matplotlib(saving: bool) -> None:
+    """Configure matplotlib for saving mode if requested."""
+    if saving:
+        matplotlib.use('AGG')
+        plt.ioff()
 
 #
 # Plot q
 #
 def plot_density(dir_name:Path, x:NDArray, y:NDArray,
-                 pic:int, q_range:list, 
+                 pic:int, q_range:Sequence[tuple[float, float]], 
                  da_juveniles:float, da_adults:float, **kwargs) -> None:
 
     color_bar = kwargs.get('color_bar', True)
     no_pictures = kwargs.get('no_pictures', False)
-    rcount = kwargs.get('rcount', 50)
-    ccount = kwargs.get('ccount', 50)
+    rcount = kwargs.get('rcount', DEFAULT_RCOUNT)
+    ccount = kwargs.get('ccount', DEFAULT_CCOUNT)
 
     juveniles_range = q_range[0]
     adult_range = q_range[1]
     tree_range = q_range[2]
 
     if no_pictures:
-        pass
-    else:
-        file_name = (dir_name / 'saving_{:03d}'.format(pic)).with_suffix('.npz')
-        u, w, z, time = sav.load_status(file_name)
+        return
 
-        # Plot juveniles contour
-        u = np.sum(u, axis=0) * da_juveniles
-        file_name = (dir_name / 'plot_contour_juveniles_{:03d}'.format(pic)).with_suffix('.png')
-        plot_contour(x, y, u, file_name=file_name,
-                    title='Juveniles at time = {0:.2f}'.format(time),
-                    label=('$x_1$', '$x_2$'),
-                    lower_value=juveniles_range[0],
-                    upper_value=juveniles_range[1],
-                    saving=True, color_bar=color_bar)
-        
-        # Plot adults contour
-        w = np.sum(w, axis=0) * da_adults
-        file_name = (dir_name / 'plot_contour_adults_{:03d}'.format(pic)).with_suffix('.png')
-        plot_contour(x, y, w, file_name=file_name,
-                    title='Adults at time = {0:.2f}'.format(time),
-                    label=('$x_1$', '$x_2$'),
-                    lower_value=adult_range[0],
-                    upper_value=adult_range[1],
-                    saving=True, color_bar=color_bar)
+    file_name = (dir_name / f'saving_{pic:03d}').with_suffix('.npz')
+    u, w, z, time = sav.load_status(file_name)
 
-        # Plot trees contour
-        file_name = (dir_name / 'plot_contour_trees_{:03d}'.format(pic)).with_suffix('.png')
-        plot_contour(x, y, z, file_name=file_name,
-                    title='Trees at time = {0:.2f}'.format(time),
-                    label=('$x_1$', '$x_2$'),
-                    lower_value=tree_range[0],
-                    upper_value=tree_range[1],
-                    saving=True, color_bar=color_bar)
+    densities = [
+        ('juveniles', np.sum(u, axis=0) * da_juveniles, juveniles_range),
+        ('adults', np.sum(w, axis=0) * da_adults, adult_range),
+        ('trees', z, tree_range),
+    ]
 
-        # Plot juveniles surface  
-        file_name = (dir_name / 'plot_surface_juveniles_{:03d}'.format(pic)).with_suffix('.png')
-        plot_surface(x, y, u, file_name=file_name,
-                    title='Juveniles at time = {0:.2f}'.format(time),
-                    label=('$x_1$', '$x_2$'),
-                    lower_value=juveniles_range[0],
-                    upper_value=juveniles_range[1],
-                    saving=True, rcount=rcount, ccount=ccount)
+    for name, data, value_range in densities:
+        contour_file = (dir_name / f'plot_contour_{name}_{pic:03d}').with_suffix('.png')
+        plot_contour(
+            x,
+            y,
+            data,
+            file_name=contour_file,
+            title=f'{name.capitalize()} at time = {time:.2f}',
+            label=('$x_1$', '$x_2$'),
+            lower_value=value_range[0],
+            upper_value=value_range[1],
+            saving=True,
+            color_bar=color_bar,
+        )
 
-        # Plot adults surface  
-        file_name = (dir_name / 'plot_surface_adults_{:03d}'.format(pic)).with_suffix('.png')
-        plot_surface(x, y, w, file_name=file_name,
-                    title='Adults at time = {0:.2f}'.format(time),
-                    label=('$x_1$', '$x_2$'),
-                    lower_value=adult_range[0],
-                    upper_value=adult_range[1],
-                    saving=True, rcount=rcount, ccount=ccount)
-        
-        # Plot trees surface  
-        file_name = (dir_name / 'plot_surface_trees_{:03d}'.format(pic)).with_suffix('.png')
-        plot_surface(x, y, z, file_name=file_name,
-                    title='Trees at time = {0:.2f}'.format(time),
-                    label=('$x_1$', '$x_2$'),
-                    lower_value=tree_range[0],
-                    upper_value=tree_range[1],
-                    saving=True, rcount=rcount, ccount=ccount)
+        surface_file = (dir_name / f'plot_surface_{name}_{pic:03d}').with_suffix('.png')
+        plot_surface(
+            x,
+            y,
+            data,
+            file_name=surface_file,
+            title=f'{name.capitalize()} at time = {time:.2f}',
+            label=('$x_1$', '$x_2$'),
+            lower_value=value_range[0],
+            upper_value=value_range[1],
+            saving=True,
+            rcount=rcount,
+            ccount=ccount,
+        )
 
 
 
@@ -97,21 +94,25 @@ def movie(base_directory_1:Path) -> None:
 
     commands = []
 
-    commands.append("mencoder 'mf://{}/plot_surface_tree*.png' -mf type=png:fps=5 -ovc lavc -lavcopts vcodec=wmv2 -oac copy -o {}/movie_surface_trees.avi".format(base_directory, base_directory))
-    commands.append("mencoder 'mf://{}/plot_surface_adults*.png' -mf type=png:fps=5 -ovc lavc -lavcopts vcodec=wmv2 -oac copy -o {}/movie_surface_adults.avi".format(base_directory, base_directory))
-    commands.append("mencoder 'mf://{}/plot_surface_juven*.png' -mf type=png:fps=5 -ovc lavc -lavcopts vcodec=wmv2 -oac copy -o {}/movie_surface_juveniles.avi".format(base_directory, base_directory))
+    commands.append(f"mencoder 'mf://{base_directory}/plot_surface_tree*.png' -mf type=png:fps={MENCODER_FPS} -ovc lavc -lavcopts vcodec={MENCODER_CODEC} -oac copy -o {base_directory}/movie_surface_trees.avi")
+    commands.append(f"mencoder 'mf://{base_directory}/plot_surface_adults*.png' -mf type=png:fps={MENCODER_FPS} -ovc lavc -lavcopts vcodec={MENCODER_CODEC} -oac copy -o {base_directory}/movie_surface_adults.avi")
+    commands.append(f"mencoder 'mf://{base_directory}/plot_surface_juven*.png' -mf type=png:fps={MENCODER_FPS} -ovc lavc -lavcopts vcodec={MENCODER_CODEC} -oac copy -o {base_directory}/movie_surface_juveniles.avi")
 
-    commands.append("mencoder 'mf://{}/plot_contour_tree*.png' -mf type=png:fps=5 -ovc lavc -lavcopts vcodec=wmv2 -oac copy -o {}/movie_contour_trees.avi".format(base_directory, base_directory))
-    commands.append("mencoder 'mf://{}/plot_contour_adults*.png' -mf type=png:fps=5 -ovc lavc -lavcopts vcodec=wmv2 -oac copy -o {}/movie_contour_adults.avi".format(base_directory, base_directory))
-    commands.append("mencoder 'mf://{}/plot_contour_juven*.png' -mf type=png:fps=5 -ovc lavc -lavcopts vcodec=wmv2 -oac copy -o {}/movie_contour_juveniles.avi".format(base_directory, base_directory))
+    commands.append(f"mencoder 'mf://{base_directory}/plot_contour_tree*.png' -mf type=png:fps={MENCODER_FPS} -ovc lavc -lavcopts vcodec={MENCODER_CODEC} -oac copy -o {base_directory}/movie_contour_trees.avi")
+    commands.append(f"mencoder 'mf://{base_directory}/plot_contour_adults*.png' -mf type=png:fps={MENCODER_FPS} -ovc lavc -lavcopts vcodec={MENCODER_CODEC} -oac copy -o {base_directory}/movie_contour_adults.avi")
+    commands.append(f"mencoder 'mf://{base_directory}/plot_contour_juven*.png' -mf type=png:fps={MENCODER_FPS} -ovc lavc -lavcopts vcodec={MENCODER_CODEC} -oac copy -o {base_directory}/movie_contour_juveniles.avi")
 
     try:
         for cmd in commands:
-            os.system(cmd)
+            subprocess.run(cmd, shell=True, check=True, capture_output=True)
         logging.info('Movie created')
-    except:
+    except subprocess.CalledProcessError as e:
         logging.info('Movie creation failed')
         logging.info("Do you have 'mencoder'?")
+        logging.info(f"Error message: {e}")
+    except Exception as e:
+        logging.info('Movie creation failed')
+        logging.info(f"Error message: {e}")
 
 #
 # plot a contour
@@ -122,12 +123,17 @@ def plot_contour(t1:NDArray, t2:NDArray, matrix:NDArray, **kwargs) -> None:
 
     :param t1: numpy 1D array describing the horizontal domain
     :param t2: numpy 1D array describing the vertical domain
-    :param matrix: tuple containing 4 numpy arrays describing the solution
+    :param matrix: numpy 2D array describing the solution values
+    :param title: str, plot title
+    :param label: tuple of str, axis labels (xlabel, ylabel)
+    :param saving: bool, whether to save the plot to file
+    :param file_name: Path, output filename
+    :param n_color: int, number of color levels in the contour plot
+    :param lower_value: float, minimum value for color scale
+    :param upper_value: float, maximum value for color scale
+    :param color_bar: bool, whether to display a colorbar
 
-    :param n_color: int. Number of colors of the plot
-    :param DirName: str. Name of the directory
-
-    This function write the file Contour.png
+    Saves plot as PNG file or displays interactively.
 
     """
 
@@ -137,23 +143,17 @@ def plot_contour(t1:NDArray, t2:NDArray, matrix:NDArray, **kwargs) -> None:
     xlabel, ylabel = kwargs.get('label', ('$x$', '$t$'))
     saving = kwargs.get('saving', False)
     file_name = kwargs.get('file_name', 'Contour.png')
-    n_color = kwargs.get('n_color', 256)
+    n_color = kwargs.get('n_color', DEFAULT_N_COLOR)
     lower_value = kwargs.get('lower_value', None)
     upper_value = kwargs.get('upper_value', None)
     c_bar = kwargs.get('color_bar', False)
 
-    if lower_value != None and upper_value != None:
+    if lower_value is not None and upper_value is not None:
         v = np.linspace(lower_value, upper_value, n_color)
     else:
         v = None
 
-    if saving:
-        import matplotlib
-        matplotlib.use('AGG') # NOT GOOD! Only for plotting remotely
-
-    import matplotlib.pyplot as plt
-    if saving:
-        plt.ioff()
+    _prepare_matplotlib(saving)
 
     fig = plt.figure(i)
     ax = fig.add_subplot(111)
@@ -173,7 +173,6 @@ def plot_contour(t1:NDArray, t2:NDArray, matrix:NDArray, **kwargs) -> None:
 
     if c_bar:
         cbar = plt.colorbar(mappable=c, format='%.2f', ax=ax)
-        # cbar.set_ticks([])
     else:
         plt.gca().set_aspect('equal')
 
@@ -191,12 +190,17 @@ def plot_contour(t1:NDArray, t2:NDArray, matrix:NDArray, **kwargs) -> None:
 #
 def plot_mass(directory:Path, times:NDArray, mass:NDArray, **kwargs) -> None:
 
-    """ Function drawing the mass of the solution versus the time
+    """ Function drawing the mass of the solution versus time
 
-    :param times: numpy array describing the times
-    :param mass: numpy array describing the mass
+    :param directory: Path, output directory for saving the plot
+    :param times: numpy 1D array of time values
+    :param mass: numpy 1D array of mass values
+    :param title: str, plot title (default: 'Mass versus time')
+    :param label: tuple of str, axis labels (xlabel, ylabel)
+    :param saving: bool, whether to save the plot to file
+    :param file_name: str, output filename (default: 'Mass.png')
 
-    This function write the file Mass.png
+    Saves plot as PNG file or displays interactively.
 
     """
 
@@ -207,13 +211,7 @@ def plot_mass(directory:Path, times:NDArray, mass:NDArray, **kwargs) -> None:
     saving = kwargs.get('saving', False)
     file_name = kwargs.get('file_name', 'Mass.png')
 
-    if saving:
-        import matplotlib
-        matplotlib.use('AGG') # NOT GOOD! Only for plotting remotely
-
-    import matplotlib.pyplot as plt
-    if saving:
-        plt.ioff()
+    _prepare_matplotlib(saving)
 
     fig = plt.figure(i)
     ax = fig.add_subplot(111)
@@ -226,7 +224,7 @@ def plot_mass(directory:Path, times:NDArray, mass:NDArray, **kwargs) -> None:
     ax.set_xlabel(xlabel, fontsize='xx-large')
     ax.set_ylabel(ylabel, rotation = 'horizontal', fontsize='xx-large')
 
-    c = ax.plot(times, mass)
+    ax.plot(times, mass)
 
     if saving:
         fig.savefig((directory / file_name).with_suffix('.png').as_posix(), format='png')
@@ -245,10 +243,18 @@ def plot_surface(t1:NDArray, t2:NDArray, matrix:NDArray, **kwargs) -> None:
 
     :param t1: numpy 1D array describing the horizontal domain
     :param t2: numpy 1D array describing the vertical domain
-    :param matrix: tuple. The value of the function to be plotted
-    :param DirName: str. Name of the directory
+    :param matrix: numpy 2D array of values to be plotted as surface
+    :param title: str, plot title
+    :param label: tuple of str, axis labels (xlabel, ylabel)
+    :param saving: bool, whether to save the plot to file
+    :param file_name: str, output filename
+    :param n_color: int, number of color levels
+    :param lower_value: float, minimum value for color scale
+    :param upper_value: float, maximum value for color scale
+    :param rcount: int, number of rows in surface mesh
+    :param ccount: int, number of columns in surface mesh
 
-    This function write the file Surface.png
+    Saves plot as PNG file or displays interactively.
 
     """
 
@@ -258,35 +264,29 @@ def plot_surface(t1:NDArray, t2:NDArray, matrix:NDArray, **kwargs) -> None:
     xlabel, ylabel = kwargs.get('label', ('$x$', '$t$'))
     saving = kwargs.get('saving', False)
     file_name = kwargs.get('file_name', 'Surface.png')
-    n_color = kwargs.get('n_color', 256)
+    n_color = kwargs.get('n_color', DEFAULT_N_COLOR)
     lower_value = kwargs.get('lower_value', None)
     upper_value = kwargs.get('upper_value', None)
-    rcount = kwargs.get('rcount', 50)
-    ccount = kwargs.get('ccount', 50)
+    rcount = kwargs.get('rcount', DEFAULT_RCOUNT)
+    ccount = kwargs.get('ccount', DEFAULT_CCOUNT)
 
-    if lower_value != None and upper_value != None:
+    if lower_value is not None and upper_value is not None:
         v = np.linspace(lower_value, upper_value, n_color)
     else:
         v = None
 
-    if saving:
-        import matplotlib
-        matplotlib.use('AGG') # NOT GOOD! Only for plotting remotely
-
-    import matplotlib.pyplot as plt
-    if saving:
-        plt.ioff()
+    _prepare_matplotlib(saving)
 
     fig = plt.figure(i)
     ax = fig.add_subplot(111, projection='3d')
 
     if subtitle:
-        ax.set_title(title, loc='left').set_size('xx-large')
-        ax.set_title(subtitle, loc='right').set_size('small')
+        ax.set_title(title, loc='left').set_fontsize('xx-large')
+        ax.set_title(subtitle, loc='right').set_fontsize('small')
     else:
-        ax.set_title(title).set_size('xx-large')
-    ax.set_xlabel(xlabel).set_size('xx-large')
-    ax.set_ylabel(ylabel, rotation = 'horizontal').set_size('xx-large')
+        ax.set_title(title).set_fontsize('xx-large')
+    ax.set_xlabel(xlabel).set_fontsize('xx-large')
+    ax.set_ylabel(ylabel, rotation = 'horizontal').set_fontsize('xx-large')
 
     xx, yy = np.meshgrid(t1, t2, indexing='ij')
 

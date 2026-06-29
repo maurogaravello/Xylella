@@ -13,6 +13,7 @@ from scipy import signal
 import importlib.util
 from multiprocessing import Pool
 from multiprocessing.pool import Pool as PoolClass # For type hinting
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from src import evolution
 from src import kernel_meshesgrids
@@ -45,8 +46,8 @@ def create_directory(directory):
 
 if __name__ == '__main__':
 
-    desc = """LF_xylella_main.py: it performs the simulation for the model of xylella using 
-    the Lax-Friedrichs scheme and the dimensional splitting method.
+    desc = """main_xylella.py performs the simulation for the model of xylella using 
+    either the Lax-Friedrichs or upwind scheme.
     """
 
     #
@@ -324,8 +325,7 @@ if __name__ == '__main__':
     #
     elif args.only_plot:
 
-        # import multiprocessing   
-        from multiprocessing import Process
+        # multiprocessing.Process already imported at module level
 
         # rcount and ccount (for the surface plot)
         rcount = param.rcount if hasattr(param, 'rcount') else 50
@@ -359,26 +359,37 @@ if __name__ == '__main__':
         except Exception as e:
             logging.error('Error while loading the mass: {}'.format(e))
 
-        # create list of savings        
+        # create list of savings
         files_list = sorted(dir_simulation.glob('saving_*.npz'))
 
-        pp = list(range(procs))
         start = datetime.now()
-
         logging.info('Plotting with {} processors started at {}'.format(procs, start))
-        
-        for j in range(len(files_list)):
-            elem = files_list[j]
-            if (j >= procs):
-                pp[j % procs].join()
-            pp[j % procs] = Process(target=plot.plot_density, 
-                                    args=(dir_simulation, spatial_meshes.x1, 
-                                          spatial_meshes.x2, j,
-                                           param.density_limits,
-                                           age_meshes.da_J, age_meshes.da_A), 
-                                           kwargs={'color_bar':args.color_bar,
-                                                   'rcount':rcount, 'ccount':ccount})
-            pp[j % procs].start()
+
+        # Use ProcessPoolExecutor to manage worker processes and collect exceptions.
+        with ProcessPoolExecutor(max_workers=procs) as executor:
+            futures = {
+                executor.submit(
+                    plot.plot_density,
+                    dir_simulation,
+                    spatial_meshes.x1,
+                    spatial_meshes.x2,
+                    j,
+                    param.density_limits,
+                    age_meshes.da_J,
+                    age_meshes.da_A,
+                    color_bar=args.color_bar,
+                    rcount=rcount,
+                    ccount=ccount,
+                ): j
+                for j, elem in enumerate(files_list)
+            }
+
+            for future in as_completed(futures):
+                j = futures[future]
+                try:
+                    future.result()
+                except Exception:
+                    logging.exception('Error plotting saving_{:03d}'.format(j))
 
         end = datetime.now()
 
